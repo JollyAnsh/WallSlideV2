@@ -42,6 +42,8 @@ class WallpaperChangerGUI(ctk.CTk):
         self.stop_event = threading.Event()
         self.stop_event.set()
         self.wallpaper_thread = None
+        self.countdown_timer = None
+        self.remaining_seconds = 0
 
         self.previous_image = None
         self.icon = None
@@ -108,6 +110,15 @@ class WallpaperChangerGUI(ctk.CTk):
         time_unit_menu = ctk.CTkOptionMenu(interval_frame, variable=self.time_unit,
                                            values=["Seconds", "Minutes", "Hours"], font=main_font, corner_radius=0)
         time_unit_menu.pack(side='left', pady=10, padx=(0, 15))
+
+        # Time remaining countdown
+        countdown_frame = ctk.CTkFrame(main_frame, corner_radius=radius)
+        countdown_frame.pack(fill="both", expand=True, padx=0, pady=2)
+        (ctk.CTkLabel(countdown_frame, text="Time remaining:", font=main_font, width=label_width, anchor='w')
+         .pack(side='left', pady=10, padx=(15, 5)))
+        self.countdown_label = ctk.CTkLabel(countdown_frame, text="--:--:--", font=ctk.CTkFont(size=16, weight='bold'),
+                                           width=200, anchor='w', text_color='#888888')
+        self.countdown_label.pack(side='left', pady=10, padx=(5, 15))
 
         # Randomize
         random_frame = ctk.CTkFrame(main_frame, corner_radius=radius)
@@ -200,6 +211,10 @@ class WallpaperChangerGUI(ctk.CTk):
         self.status_label.configure(text="Status: Running...", text_color='#55ff55',
                                     font=ctk.CTkFont(size=14, weight='bold'))
 
+        # Initialize countdown
+        self.remaining_seconds = self._get_interval_in_seconds()
+        self._start_countdown()
+
         self.wallpaper_thread = threading.Thread(
             target=self._run_changer,
             args=(self.folder_path.get(),),
@@ -213,9 +228,13 @@ class WallpaperChangerGUI(ctk.CTk):
         if wait and self.wallpaper_thread and self.wallpaper_thread.is_alive():
             self.wallpaper_thread.join(timeout=1)
 
+        # Stop countdown timer
+        self._stop_countdown()
+
         self.start_button.configure(state="normal", image=self.start_image)
         self.stop_button.configure(state="disabled", image=self.stop_image_disabled)
         self.status_label.configure(text="Status: Stopped", text_color='white', font=ctk.CTkFont(size=14))
+        self.countdown_label.configure(text="--:--:--", text_color='#888888')
 
     def _run_changer(self, folder: str):
         """Run the changer thread to change the wallpaper"""
@@ -247,7 +266,12 @@ class WallpaperChangerGUI(ctk.CTk):
                 print(f"Setting wallpaper: {image}")
                 set_wallpaper(image)
                 self.title(f'{self.base_title} | {os.path.basename(image)}')
-                if self.stop_event.wait(self._get_interval_in_seconds()):
+                
+                # Reset countdown for next wallpaper change
+                interval_seconds = self._get_interval_in_seconds()
+                self.remaining_seconds = interval_seconds
+                
+                if self.stop_event.wait(interval_seconds):
                     break
 
         except Exception as e:
@@ -279,6 +303,37 @@ class WallpaperChangerGUI(ctk.CTk):
         else:
             self.stop_changer(wait=True)
             self.destroy()
+
+    def _start_countdown(self):
+        """Start the countdown timer"""
+        self._stop_countdown()
+        self._update_countdown()
+
+    def _stop_countdown(self):
+        """Stop the countdown timer"""
+        if self.countdown_timer is not None:
+            self.after_cancel(self.countdown_timer)
+            self.countdown_timer = None
+
+    def _update_countdown(self):
+        """Update the countdown display every second"""
+        if self.stop_event.is_set():
+            return
+
+        if self.remaining_seconds > 0:
+            hours = self.remaining_seconds // 3600
+            minutes = (self.remaining_seconds % 3600) // 60
+            seconds = self.remaining_seconds % 60
+            
+            time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            self.countdown_label.configure(text=time_str, text_color='#55ff55')
+            
+            self.remaining_seconds -= 1
+            self.countdown_timer = self.after(1000, self._update_countdown)
+        else:
+            # Reset to full interval when countdown reaches zero
+            self.remaining_seconds = self._get_interval_in_seconds()
+            self._update_countdown()
 
     def _save_settings(self):
         """Save the settings to a file on close"""

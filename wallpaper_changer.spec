@@ -42,7 +42,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='winslidev2',
+    name='WinSlideV3',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
